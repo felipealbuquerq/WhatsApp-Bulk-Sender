@@ -1,20 +1,25 @@
 package ga.nikhilkumar.whatsappsender.sender;
 
 import android.annotation.SuppressLint;
+import android.content.pm.PackageManager;
+import android.content.ComponentName;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.ThumbnailUtils;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.support.v7.app.AppCompatActivity;
+import android.telephony.PhoneNumberUtils;
 import android.text.TextUtils;
 import android.util.Log;
+import android.widget.Toast;
 
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.SerializationUtils;
@@ -39,7 +44,7 @@ import ga.nikhilkumar.whatsappsender.sender.model.WContact;
 import ga.nikhilkumar.whatsappsender.sender.model.WMessage;
 import ga.nikhilkumar.whatsappsender.whatsapp.MediaData;
 
-public class WhatsappApi {
+public class WhatsappApi extends AppCompatActivity {
     Context launchContext = null;
     private static WhatsappApi instance;
     private static String imgFolder = Environment.getExternalStorageDirectory().getAbsolutePath() + "/WhatsApp/Media/WhatsApp Images/Sent";
@@ -102,24 +107,20 @@ public class WhatsappApi {
                 @Override
                 protected Boolean doInBackground(Void... params) {
                     boolean result = true;
-                    Shell.SU.run("am force-stop com.whatsapp");
+/*                    Shell.SU.run("am force-stop com.whatsapp");
                     Shell.SU.run("mv /data/data/com.whatsapp/databases/msgstore.db " + context.getDatabasePath("msgstore.db").getAbsolutePath());
-//                    Shell.SU.run("mv /data/data/com.whatsapp/databases/msgstore.db-wal " + context.getDatabasePath("msgstore.db").getAbsolutePath() + "-wal");
-//                    Shell.SU.run("mv /data/data/com.whatsapp/databases/msgstore.db-shm " + context.getDatabasePath("msgstore.db").getAbsolutePath() + "-shm");
-                    Shell.SU.run("chmod 777 " + context.getDatabasePath("msgstore.db").getAbsolutePath());
-//                    Shell.SU.run("chmod 777 " + context.getDatabasePath("msgstore.db").getAbsolutePath() + "-wal");
-//                    Shell.SU.run("chmod 777 " + context.getDatabasePath("msgstore.db").getAbsolutePath() + "-shm");
+                    Shell.SU.run("chmod 777 " + context.getDatabasePath("msgstore.db").getAbsolutePath());*/
                     try {
-                        db = SQLiteDatabase.openOrCreateDatabase(new File(context.getDatabasePath("msgstore.db").getAbsolutePath()), null);
+                        //db = SQLiteDatabase.openOrCreateDatabase(new File(context.getDatabasePath("msgstore.db").getAbsolutePath()), null);
                         for (int i = 0; i < contacts.size(); i++) {
                             try {
                                 Log.e("MSG", contacts.get(i).toString());
-                                sendMessage(contacts.get(i), messages.get(i));
+                                sendMessage(contacts.get(i), messages.get(i), context);
                             } catch (IOException e) {
                                 e.printStackTrace();
                             }
                         }
-                        db.close();
+                        //db.close();
                     } catch (Exception e) {
                         Log.e("SQL", e.getMessage());
                         result = false;
@@ -148,7 +149,7 @@ public class WhatsappApi {
             throw new WhatsappNotInstalledException();
     }
 
-    private void sendMessage(WContact contact, WMessage message) throws IOException {
+    private void sendMessage(WContact contact, WMessage message, Context context) throws IOException {
 
         String name = null;
         Calendar c = null;
@@ -213,7 +214,7 @@ public class WhatsappApi {
                 name = destination.getName();
                 break;
         }
-        sendBigMessage(contact.getId(), message.getText(), name, message.getMime());
+        sendBigMessage(contact.getId(), message.getText(), name, message.getMime(), context);
     }
 
     @SuppressLint("StaticFieldLeak")
@@ -254,7 +255,7 @@ public class WhatsappApi {
 
     }
 
-    private void sendBigMessage(String jid, String msg, String file, String mimeType) {
+    private void sendBigMessage(String jid, String msg, String file, String mimeType, Context context) {
         long l1;
         long l2;
         int k;
@@ -329,21 +330,57 @@ public class WhatsappApi {
         } else
             initialValues.put("data", msg);
 
-        long idm = db.insert("messages", null, initialValues);
+  /*      long idm = db.insert("messages", null, initialValues);
 
         query1 = " insert into chat_list (key_remote_jid) select '" + jid
                 + "' where not exists (select 1 from chat_list where key_remote_jid='" + jid + "');";
 
         query2 = " update chat_list set message_table_id = (select max(messages._id) from messages) where chat_list.key_remote_jid='" + jid + "';";
+*/
 
-
-        ContentValues values = new ContentValues();
+/*        ContentValues values = new ContentValues();
         values.put("docid", idm);
         values.put("c0content", "null  ");
         db.insert("messages_fts_content", null, values);
 
 
-        db.execSQL(query1 + query2);
+        db.execSQL(query1 + query2);*/
+
+        String smsNumber = jid.substring(0, 14);
+        this.openWhatsApp(smsNumber, msg, context);
+    }
+
+    private void openWhatsApp(String smsNumber, String message, Context context) {
+        boolean isWhatsappInstalled = whatsappInstalledOrNot("com.whatsapp", context);
+        if (isWhatsappInstalled) {
+
+            Intent sendIntent = new Intent("android.intent.action.MAIN");
+            sendIntent.setAction(Intent.ACTION_SEND);
+            sendIntent.setType("text/plain");
+            sendIntent.putExtra(Intent.EXTRA_TEXT, message);
+            sendIntent.setPackage("com.whatsapp");
+            sendIntent.putExtra("jid", PhoneNumberUtils.stripSeparators(smsNumber) + "@s.whatsapp.net");//phone number without "+" prefix
+
+            context.startActivity(sendIntent);
+        } else {
+            Uri uri = Uri.parse("market://details?id=com.whatsapp");
+            Intent goToMarket = new Intent(Intent.ACTION_VIEW, uri);
+            Toast.makeText(this, "WhatsApp not Installed",
+                    Toast.LENGTH_SHORT).show();
+            startActivity(goToMarket);
+        }
+    }
+
+    private boolean whatsappInstalledOrNot(String uri, Context context) {
+        PackageManager pm = context.getPackageManager();
+        boolean app_installed = false;
+        try {
+            pm.getPackageInfo(uri, PackageManager.GET_ACTIVITIES);
+            app_installed = true;
+        } catch (PackageManager.NameNotFoundException e) {
+            app_installed = false;
+        }
+        return app_installed;
     }
 
     public boolean isRootAvailable() {
